@@ -1,0 +1,91 @@
+{
+  "type": "PRE_TAKEOFF",
+  "version": 1,
+  "nameEs": "Pre-Despegue y Verificacion de Zona",
+  "items": [
+    {
+      "orderIndex": 1,
+      "textEs": "Area de despegue despejada en radio de 3 metros",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 2,
+      "textEs": "Observador(es) visual(es) informado(s) y en posicion",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 3,
+      "textEs": "Sin personas no autorizadas en zona de operacion",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 4,
+      "textEs": "Condiciones de viento verificadas in-situ - aceptables para operacion",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 5,
+      "textEs": "Punto de aterrizaje de emergencia identificado y comunicado",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 6,
+      "textEs": "Altitud maxima de operacion recordada: 123m AGL",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 7,
+      "textEs": "Distancia maxima de operacion recordada: 500m VLOS",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 8,
+      "textEs": "Satelites GPS confirmados >= 12 para despegue",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 9,
+      "textEs": "Enlace de video confirmado estable",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    },
+    {
+      "orderIndex": 10,
+      "textEs": "Motores inician correctamente (prueba de arranque breve)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "PROPULSION"
+    },
+    {
+      "orderIndex": 11,
+      "textEs": "Hover test a 2m de altura - aeronave estable",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 12,
+      "textEs": "Contactos de emergencia a la mano (torre de control local)",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+version: '3.8'
+
+# =============================================================================
+# Focus Flight Ops - Docker Compose SOLO DESARROLLO
+# =============================================================================
+#
+# Solo levanta PostgreSQL. Backend y Frontend corren localmente.
+#
+# $ docker compose -f docker-compose.dev.yml up -d
+# $ cd Focus-Flight-OPS-backend && npm run start:dev
+# $ cd Focus-Flight-OPS-frontend && npm start
+#
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: focus-flight-ops-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2607
+      POSTGRES_DB: focus_flight_ops
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d focus_flight_ops"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_dev_data:
+    driver: local

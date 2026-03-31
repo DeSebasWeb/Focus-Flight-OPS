@@ -1,0 +1,91 @@
+{
+  "type": "CONFIGURATION",
+  "version": 1,
+  "nameEs": "Configuracion y Enlace",
+  "items": [
+    {
+      "orderIndex": 1,
+      "textEs": "Control remoto encendido y enlazado con la aeronave",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    },
+    {
+      "orderIndex": 2,
+      "textEs": "Bateria del control remoto >= 80%",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    },
+    {
+      "orderIndex": 3,
+      "textEs": "App de vuelo conectada y mostrando telemetria",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    },
+    {
+      "orderIndex": 4,
+      "textEs": "Senal GPS activa con >= 8 satelites",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 5,
+      "textEs": "Brujula (compass) calibrada - sin interferencia magnetica",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 6,
+      "textEs": "IMU calibrada (sin alertas de calibracion)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 7,
+      "textEs": "Altitud RTH configurada (min 50m sobre obstaculos locales, max 120m)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 8,
+      "textEs": "Geofence/limite de distancia activado en controlador",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 9,
+      "textEs": "Failsafe configurado: RTH en perdida de senal",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 10,
+      "textEs": "Limite de altitud maxima configurado (123m AGL)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 11,
+      "textEs": "Enlace de video estable y sin interferencias",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    },
+    {
+      "orderIndex": 12,
+      "textEs": "Firmware de aeronave y control actualizado",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "CONTROL"
+    }
+  ]
+}

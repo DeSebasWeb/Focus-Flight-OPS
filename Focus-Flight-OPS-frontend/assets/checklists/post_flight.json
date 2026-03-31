@@ -1,0 +1,63 @@
+{
+  "type": "POST_FLIGHT",
+  "version": 1,
+  "nameEs": "Post-Vuelo e Inspeccion Final",
+  "items": [
+    {
+      "orderIndex": 1,
+      "textEs": "Motores apagados y helices detenidas completamente",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 2,
+      "textEs": "Bateria retirada de la aeronave",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "BATTERY"
+    },
+    {
+      "orderIndex": 3,
+      "textEs": "Inspeccion visual post-vuelo: sin danos visibles",
+      "isCritical": false,
+      "requiresPhoto": true,
+      "category": "STRUCTURAL"
+    },
+    {
+      "orderIndex": 4,
+      "textEs": "Helices sin danos ni desgaste post-vuelo",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "PROPULSION"
+    },
+    {
+      "orderIndex": 5,
+      "textEs": "Registrar nivel final de bateria",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "BATTERY"
+    },
+    {
+      "orderIndex": 6,
+      "textEs": "Datos de vuelo guardados (fotos, video, telemetria)",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 7,
+      "textEs": "Bitacora de vuelo completada con observaciones",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    },
+    {
+      "orderIndex": 8,
+      "textEs": "Equipo empacado y asegurado para transporte",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SAFETY"
+    }
+  ]
+}

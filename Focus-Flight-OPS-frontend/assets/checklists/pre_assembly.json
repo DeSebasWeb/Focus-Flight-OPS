@@ -1,0 +1,98 @@
+{
+  "type": "PRE_ASSEMBLY",
+  "version": 1,
+  "nameEs": "Pre-Armado e Inspeccion Fisica",
+  "items": [
+    {
+      "orderIndex": 1,
+      "textEs": "Fuselaje sin danos visibles (grietas, abolladuras, deformaciones)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "STRUCTURAL"
+    },
+    {
+      "orderIndex": 2,
+      "textEs": "Brazos desplegados y asegurados en posicion de vuelo",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "STRUCTURAL"
+    },
+    {
+      "orderIndex": 3,
+      "textEs": "Helices sin grietas ni desgaste - direccion correcta CW/CCW verificada",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "PROPULSION"
+    },
+    {
+      "orderIndex": 4,
+      "textEs": "Helices ajustadas firmemente en los motores",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "PROPULSION"
+    },
+    {
+      "orderIndex": 5,
+      "textEs": "Motores giran libremente sin obstrucciones ni ruidos anormales",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "PROPULSION"
+    },
+    {
+      "orderIndex": 6,
+      "textEs": "Bateria de vuelo cargada >= 80%",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "BATTERY"
+    },
+    {
+      "orderIndex": 7,
+      "textEs": "Bateria insertada y asegurada correctamente (sin holgura)",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "BATTERY"
+    },
+    {
+      "orderIndex": 8,
+      "textEs": "Contactos de bateria limpios y sin corrosion",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "BATTERY"
+    },
+    {
+      "orderIndex": 9,
+      "textEs": "Tarjeta microSD insertada y con espacio disponible",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 10,
+      "textEs": "Lente de camara/sensor limpia y sin obstrucciones",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 11,
+      "textEs": "Gimbal desenganchado y se mueve libremente",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    },
+    {
+      "orderIndex": 12,
+      "textEs": "Tren de aterrizaje en posicion correcta",
+      "isCritical": true,
+      "requiresPhoto": false,
+      "category": "STRUCTURAL"
+    },
+    {
+      "orderIndex": 13,
+      "textEs": "Sensores de proximidad/anticolision limpios",
+      "isCritical": false,
+      "requiresPhoto": false,
+      "category": "SENSORS"
+    }
+  ]
+}
