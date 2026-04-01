@@ -1,11 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  View, Text, TouchableOpacity, Alert, TextInput, Dimensions, Animated,
+} from 'react-native';
+import { WebView } from 'react-native-webview';
+import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useTheme } from '../../theme/ThemeContext';
 import { useStyles, StyleTheme } from '../../hooks/useStyles';
 import { useHaptic } from '../../hooks/useHaptic';
 import { useFlightStore } from '../../store/slices/flightSlice';
 import { useFleetStore } from '../../store/slices/fleetSlice';
-import * as Location from 'expo-location';
+import { buildLiveFlightMapHtml } from '../../utils/liveFlightMapHtml';
+import { geofenceApi } from '../../../services/api/geofenceApi';
+import { syncManager } from '../../../infrastructure/sync/SyncManager';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const MAP_HEIGHT = SCREEN_HEIGHT * 0.38;
+
+interface ProximityAlert {
+  zoneName: string;
+  zoneType: string;
+  distanceM: number;
+  level: 'warning' | 'danger';
+}
 
 export function ActiveFlightScreen({ navigation }: any) {
   const { colors } = useTheme();
@@ -18,7 +35,54 @@ export function ActiveFlightScreen({ navigation }: any) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const telemetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const webViewRef = useRef<WebView>(null);
 
+  // Map & zones
+  const [mapHtml, setMapHtml] = useState<string | null>(null);
+  const [zonesFromCache, setZonesFromCache] = useState(false);
+
+  // Proximity alert
+  const [proximityAlert, setProximityAlert] = useState<ProximityAlert | null>(null);
+  const alertTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Editable gauges
+  const [editingGauge, setEditingGauge] = useState<string | null>(null);
+  const [manualAlt, setManualAlt] = useState<string | null>(null);
+  const [manualDist, setManualDist] = useState<string | null>(null);
+
+  // Load zones and build map when flight starts
+  useEffect(() => {
+    if (activeFlight) {
+      loadMapWithZones();
+    }
+  }, [activeFlight?.id]);
+
+  const loadMapWithZones = async () => {
+    const lat = currentTelemetry?.latitude ?? 4.6782;
+    const lng = currentTelemetry?.longitude ?? -74.0582;
+    const cacheKey = `flight_zones_${lat.toFixed(1)}_${lng.toFixed(1)}`;
+
+    let zones: any[] = [];
+    let fromCache = false;
+
+    try {
+      const result = await syncManager.fetchWithFallback<any[]>(cacheKey, () =>
+        geofenceApi.getZones(lat, lng, 10),
+      );
+      if (result) {
+        zones = result.data;
+        fromCache = result.fromCache;
+      }
+    } catch {
+      // No zones available - render map without zones
+    }
+
+    setZonesFromCache(fromCache);
+    const html = buildLiveFlightMapHtml(lat, lng, zones, colors.mapTileUrl, { fromCache });
+    setMapHtml(html);
+  };
+
+  // Timer + Telemetry intervals
   useEffect(() => {
     if (activeFlight) {
       intervalRef.current = setInterval(() => {
@@ -28,7 +92,6 @@ export function ActiveFlightScreen({ navigation }: any) {
         setElapsedSeconds(elapsed);
       }, 1000);
 
-      // Real GPS telemetry - read device location and send to backend
       telemetryRef.current = setInterval(async () => {
         try {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
@@ -39,13 +102,21 @@ export function ActiveFlightScreen({ navigation }: any) {
             altitudeM: loc.coords.altitude ?? 0,
             speedMs: loc.coords.speed ?? 0,
             headingDeg: loc.coords.heading ?? 0,
-            batteryPercent: 0, // Device battery - would need expo-battery
+            batteryPercent: 0,
             signalStrength: 0,
             distanceFromPilotM: 0,
             satelliteCount: 0,
           };
 
           updateTelemetry(telemetryData);
+
+          // Update map position
+          webViewRef.current?.postMessage(JSON.stringify({
+            type: 'updatePosition',
+            lat: telemetryData.latitude,
+            lng: telemetryData.longitude,
+            heading: telemetryData.headingDeg,
+          }));
 
           // Send to backend
           if (activeFlight?.id) {
@@ -56,11 +127,9 @@ export function ActiveFlightScreen({ navigation }: any) {
               altitudeAglM: telemetryData.altitudeM,
               speedMs: telemetryData.speedMs,
               headingDeg: telemetryData.headingDeg,
-            }).catch(() => {}); // Fire and forget - don't block UI
+            }).catch(() => {});
           }
-        } catch {
-          // GPS not available - skip this tick
-        }
+        } catch {}
       }, 3000);
     }
 
@@ -69,6 +138,33 @@ export function ActiveFlightScreen({ navigation }: any) {
       if (telemetryRef.current) clearInterval(telemetryRef.current);
     };
   }, [activeFlight?.id]);
+
+  // Handle WebView messages (proximity alerts)
+  const onWebViewMessage = useCallback((event: any) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'proximityAlert') {
+        const level: 'warning' | 'danger' = msg.distanceM < 200 ? 'danger' : 'warning';
+
+        if (level === 'danger') {
+          haptic.error();
+        } else {
+          haptic.warning();
+        }
+
+        setProximityAlert({
+          zoneName: msg.zoneName,
+          zoneType: msg.zoneType,
+          distanceM: msg.distanceM,
+          level,
+        });
+
+        // Auto-hide after 5s
+        if (alertTimeoutRef.current) clearTimeout(alertTimeoutRef.current);
+        alertTimeoutRef.current = setTimeout(() => setProximityAlert(null), 5000);
+      }
+    } catch {}
+  }, []);
 
   const formatTime = (secs: number) => {
     const h = Math.floor(secs / 3600);
@@ -91,10 +187,8 @@ export function ActiveFlightScreen({ navigation }: any) {
         lng = loc.coords.longitude;
       }
       haptic.heavy();
-      // Note: In production, missionId should come from a previously created mission
-      // For MVP, we create a placeholder
       await startFlight({
-        missionId: pilot.id, // Placeholder - should be actual mission ID
+        missionId: pilot.id,
         droneId: selectedDrone.id,
         takeoffLat: lat,
         takeoffLng: lng,
@@ -127,6 +221,7 @@ export function ActiveFlightScreen({ navigation }: any) {
                 } catch {}
                 await endFlight(activeFlight.id, { landingLat: lat, landingLng: lng });
                 setElapsedSeconds(0);
+                setMapHtml(null);
               } catch (err: any) {
                 Alert.alert('Error', err.message || 'No se pudo finalizar');
               }
@@ -135,6 +230,15 @@ export function ActiveFlightScreen({ navigation }: any) {
         },
       ],
     );
+  };
+
+  const handleGaugeSave = (gauge: string, value: string) => {
+    const num = parseFloat(value);
+    if (isNaN(num)) { setEditingGauge(null); return; }
+
+    if (gauge === 'alt') setManualAlt(value);
+    if (gauge === 'dist') setManualDist(value);
+    setEditingGauge(null);
   };
 
   // Pre-flight state
@@ -180,6 +284,11 @@ export function ActiveFlightScreen({ navigation }: any) {
         ? colors.batteryMedium
         : colors.batteryLow;
 
+  const displayAlt = manualAlt ?? tel?.altitudeM?.toFixed(0) ?? '--';
+  const displayDist = manualDist ?? tel?.distanceFromPilotM?.toFixed(0) ?? '--';
+  const isAltManual = manualAlt !== null;
+  const isDistManual = manualDist !== null;
+
   return (
     <View style={s.container}>
       {/* Top bar */}
@@ -202,47 +311,81 @@ export function ActiveFlightScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* Flight timer */}
-      <View style={s.timerContainer}>
-        <Text style={s.timerLabel}>TIEMPO DE VUELO</Text>
+      {/* Live Map */}
+      <View style={s.mapContainer}>
+        {mapHtml ? (
+          <WebView
+            ref={webViewRef}
+            style={s.map}
+            originWhitelist={['*']}
+            source={{ html: mapHtml }}
+            javaScriptEnabled
+            domStorageEnabled
+            scrollEnabled={false}
+            onMessage={onWebViewMessage}
+          />
+        ) : (
+          <View style={[s.map, s.mapLoading]}>
+            <Ionicons name="map-outline" size={32} color={colors.textSecondary} />
+            <Text style={s.mapLoadingText}>Cargando mapa...</Text>
+          </View>
+        )}
+
+        {/* Proximity alert banner */}
+        {proximityAlert && (
+          <View style={[s.alertBanner, proximityAlert.level === 'danger' ? s.alertBannerDanger : s.alertBannerWarning]}>
+            <Ionicons
+              name={proximityAlert.level === 'danger' ? 'close-circle' : 'warning'}
+              size={18}
+              color="#FFF"
+            />
+            <Text style={s.alertText}>
+              {proximityAlert.level === 'danger' ? 'ZONA RESTRINGIDA' : 'ACERCANDOSE'} - {proximityAlert.zoneName} ({proximityAlert.distanceM}m)
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Timer row */}
+      <View style={s.timerRow}>
+        <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
         <Text style={s.timer}>{formatTime(elapsedSeconds)}</Text>
         <Text style={s.droneNameActive}>{selectedDrone?.manufacturer} {selectedDrone?.modelName}</Text>
       </View>
 
-      {/* Telemetry gauges */}
+      {/* Compact gauges - 3 in a row, ALT and DIST editable */}
       <View style={s.gaugesRow}>
-        <TelemetryGauge
-          styles={s}
-          label="ALTITUD"
-          value={tel?.altitudeM?.toFixed(0) ?? '--'}
-          unit="m AGL"
-          warn={(tel?.altitudeM ?? 0) > 120}
-          max="123m"
-        />
-        <TelemetryGauge
-          styles={s}
-          label="DISTANCIA"
-          value={tel?.distanceFromPilotM?.toFixed(0) ?? '--'}
+        <EditableGauge
+          label="ALT"
+          value={displayAlt}
           unit="m"
-          warn={(tel?.distanceFromPilotM ?? 0) > 450}
-          max="500m"
+          isManual={isAltManual}
+          isEditing={editingGauge === 'alt'}
+          warn={parseFloat(displayAlt) > 120}
+          onTap={() => setEditingGauge('alt')}
+          onSave={(v: string) => handleGaugeSave('alt', v)}
+          onCancel={() => setEditingGauge(null)}
+          s={s}
+          colors={colors}
         />
-      </View>
-
-      <View style={s.gaugesRow}>
-        <TelemetryGauge
-          styles={s}
-          label="VELOCIDAD"
-          value={tel?.speedMs?.toFixed(1) ?? '--'}
-          unit="m/s"
+        <EditableGauge
+          label="DIST"
+          value={displayDist}
+          unit="m"
+          isManual={isDistManual}
+          isEditing={editingGauge === 'dist'}
+          warn={parseFloat(displayDist) > 450}
+          onTap={() => setEditingGauge('dist')}
+          onSave={(v: string) => handleGaugeSave('dist', v)}
+          onCancel={() => setEditingGauge(null)}
+          s={s}
+          colors={colors}
         />
-        <TelemetryGauge
-          styles={s}
-          label="COORD"
-          value={tel ? `${tel.latitude.toFixed(4)}` : '--'}
-          unit={tel ? `${tel.longitude.toFixed(4)}` : ''}
-          small
-        />
+        <View style={s.gaugeCompact}>
+          <Text style={s.gaugeLabel}>VEL</Text>
+          <Text style={s.gaugeValue}>{tel?.speedMs?.toFixed(1) ?? '--'}</Text>
+          <Text style={s.gaugeUnit}>m/s</Text>
+        </View>
       </View>
 
       {/* End flight button */}
@@ -253,214 +396,121 @@ export function ActiveFlightScreen({ navigation }: any) {
   );
 }
 
-function TelemetryGauge({
-  styles: s,
-  label,
-  value,
-  unit,
-  warn,
-  max,
-  small,
-}: {
-  styles: ReturnType<typeof createStyles>;
-  label: string;
-  value: string;
-  unit: string;
-  warn?: boolean;
-  max?: string;
-  small?: boolean;
-}) {
+// Editable gauge component
+function EditableGauge({ label, value, unit, isManual, isEditing, warn, onTap, onSave, onCancel, s, colors }: any) {
+  const [inputValue, setInputValue] = useState(value === '--' ? '' : value);
+
+  if (isEditing) {
+    return (
+      <View style={[s.gaugeCompact, s.gaugeEditing]}>
+        <Text style={s.gaugeLabel}>{label}</Text>
+        <TextInput
+          style={s.gaugeInput}
+          value={inputValue}
+          onChangeText={setInputValue}
+          keyboardType="numeric"
+          autoFocus
+          selectTextOnFocus
+          onSubmitEditing={() => onSave(inputValue)}
+          onBlur={() => onCancel()}
+        />
+        <Text style={s.gaugeUnit}>{unit}</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={[s.gauge_container, warn && s.gauge_containerWarn]}>
-      <Text style={s.gauge_label}>{label}</Text>
-      <Text style={[s.gauge_value, warn && s.gauge_valueWarn, small && s.gauge_valueSmall]}>
-        {value}
-      </Text>
-      <Text style={s.gauge_unit}>{unit}</Text>
-      {max && <Text style={s.gauge_max}>Max: {max}</Text>}
-    </View>
+    <TouchableOpacity
+      style={[s.gaugeCompact, isManual && s.gaugeManual, warn && s.gaugeWarn]}
+      onPress={onTap}
+      activeOpacity={0.7}
+    >
+      <View style={s.gaugeLabelRow}>
+        <Text style={s.gaugeLabel}>{label}</Text>
+        <Ionicons name="pencil" size={8} color={colors.textDisabled} />
+      </View>
+      <Text style={[s.gaugeValue, warn && { color: colors.danger }]}>{value}</Text>
+      <Text style={s.gaugeUnit}>{unit}{isManual ? ' (manual)' : ''}</Text>
+    </TouchableOpacity>
   );
 }
 
-const createStyles = (theme: StyleTheme) => {
-  const { colors } = theme;
+const createStyles = ({ colors, spacing, borderRadius }: StyleTheme) => ({
+  container: { flex: 1, backgroundColor: colors.surface0 },
 
-  return {
-    // --- Gauge styles ---
-    gauge_container: {
-      flex: 1,
-      backgroundColor: colors.surface1,
-      borderRadius: 12,
-      padding: 16,
-      alignItems: 'center' as const,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    gauge_containerWarn: {
-      borderColor: colors.danger,
-      borderWidth: 2,
-    },
-    gauge_label: {
-      color: colors.textSecondary,
-      fontSize: 10,
-      fontWeight: '600' as const,
-      letterSpacing: 1,
-      textTransform: 'uppercase' as const,
-    },
-    gauge_value: {
-      color: colors.textPrimary,
-      fontSize: 36,
-      fontWeight: '700' as const,
-      fontVariant: ['tabular-nums'],
-      marginTop: 4,
-    },
-    gauge_valueWarn: {
-      color: colors.danger,
-    },
-    gauge_valueSmall: {
-      fontSize: 18,
-    },
-    gauge_unit: {
-      color: colors.textSecondary,
-      fontSize: 12,
-      marginTop: 2,
-    },
-    gauge_max: {
-      color: colors.textSecondary,
-      fontSize: 10,
-      marginTop: 4,
-      fontStyle: 'italic' as const,
-    },
+  // Pre-flight
+  preFlightContainer: { flex: 1, justifyContent: 'center' as const, alignItems: 'center' as const, padding: 16 },
+  preFlightTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '700' as const, marginBottom: 24 },
+  droneInfo: { alignItems: 'center' as const, marginBottom: 32 },
+  droneLabel: { color: colors.textSecondary, fontSize: 14 },
+  droneName: { color: colors.textPrimary, fontSize: 20, fontWeight: '600' as const, marginTop: 4 },
+  droneSerial: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
+  noDrone: { color: colors.warning, fontSize: 16, marginBottom: 32 },
+  startBtn: { backgroundColor: colors.success, borderRadius: 16, paddingVertical: 20, paddingHorizontal: 48, marginBottom: 16 },
+  startBtnDisabled: { backgroundColor: colors.surface3 },
+  startBtnText: { color: colors.textOnPrimary, fontSize: 20, fontWeight: '800' as const, letterSpacing: 1 },
+  disclaimer: { color: colors.textSecondary, fontSize: 12, textAlign: 'center' as const, paddingHorizontal: 32, marginTop: 8 },
 
-    // --- Screen styles ---
-    container: {
-      flex: 1,
-      backgroundColor: colors.surface0,
-      padding: 16,
-    },
-    preFlightContainer: {
-      flex: 1,
-      justifyContent: 'center' as const,
-      alignItems: 'center' as const,
-    },
-    preFlightTitle: {
-      color: colors.textPrimary,
-      fontSize: 24,
-      fontWeight: '700' as const,
-      marginBottom: 24,
-    },
-    droneInfo: {
-      alignItems: 'center' as const,
-      marginBottom: 32,
-    },
-    droneLabel: {
-      color: colors.textSecondary,
-      fontSize: 14,
-    },
-    droneName: {
-      color: colors.textPrimary,
-      fontSize: 20,
-      fontWeight: '600' as const,
-      marginTop: 4,
-    },
-    droneSerial: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      marginTop: 2,
-    },
-    noDrone: {
-      color: colors.warning,
-      fontSize: 16,
-      marginBottom: 32,
-    },
-    startBtn: {
-      backgroundColor: colors.success,
-      borderRadius: 16,
-      paddingVertical: 20,
-      paddingHorizontal: 48,
-      marginBottom: 16,
-    },
-    startBtnDisabled: {
-      backgroundColor: colors.surface3,
-    },
-    startBtnText: {
-      color: colors.textOnPrimary,
-      fontSize: 20,
-      fontWeight: '800' as const,
-      letterSpacing: 1,
-    },
-    disclaimer: {
-      color: colors.textSecondary,
-      fontSize: 12,
-      textAlign: 'center' as const,
-      paddingHorizontal: 32,
-      marginTop: 8,
-    },
-    topBar: {
-      flexDirection: 'row' as const,
-      justifyContent: 'space-around' as const,
-      backgroundColor: colors.surface1,
-      borderRadius: 12,
-      padding: 12,
-      marginBottom: 16,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    topItem: {
-      alignItems: 'center' as const,
-    },
-    topLabel: {
-      color: colors.textSecondary,
-      fontSize: 10,
-      fontWeight: '600' as const,
-      letterSpacing: 1,
-    },
-    topValue: {
-      color: colors.textPrimary,
-      fontSize: 18,
-      fontWeight: '700' as const,
-      fontVariant: ['tabular-nums'],
-      marginTop: 2,
-    },
-    timerContainer: {
-      alignItems: 'center' as const,
-      marginBottom: 20,
-    },
-    timerLabel: {
-      color: colors.textSecondary,
-      fontSize: 11,
-      letterSpacing: 2,
-      fontWeight: '600' as const,
-    },
-    timer: {
-      color: colors.textPrimary,
-      fontSize: 52,
-      fontWeight: '700' as const,
-      fontVariant: ['tabular-nums'],
-      marginTop: 4,
-    },
-    droneNameActive: {
-      color: colors.textSecondary,
-      fontSize: 13,
-      marginTop: 4,
-    },
-    gaugesRow: {
-      flexDirection: 'row' as const,
-      gap: 12,
-      marginBottom: 12,
-    },
-    endBtn: {
-      backgroundColor: colors.danger,
-      borderRadius: 12,
-      paddingVertical: 16,
-      alignItems: 'center' as const,
-      marginTop: 8,
-    },
-    endBtnText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '800' as const,
-      letterSpacing: 1,
-    },
-  };
-};
+  // Top bar
+  topBar: {
+    flexDirection: 'row' as const, justifyContent: 'space-around' as const,
+    backgroundColor: colors.surface1, paddingVertical: 8, paddingHorizontal: 12,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  topItem: { alignItems: 'center' as const },
+  topLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: '600' as const, letterSpacing: 1 },
+  topValue: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' as const, fontVariant: ['tabular-nums'], marginTop: 1 },
+
+  // Map
+  mapContainer: { height: MAP_HEIGHT, position: 'relative' as const },
+  map: { flex: 1 },
+  mapLoading: { justifyContent: 'center' as const, alignItems: 'center' as const, backgroundColor: colors.surface1 },
+  mapLoadingText: { color: colors.textSecondary, fontSize: 13, marginTop: 8 },
+
+  // Proximity alert
+  alertBanner: {
+    position: 'absolute' as const, bottom: 0, left: 0, right: 0,
+    flexDirection: 'row' as const, alignItems: 'center' as const, gap: 8,
+    paddingVertical: 8, paddingHorizontal: 12,
+  },
+  alertBannerDanger: { backgroundColor: 'rgba(255,23,68,0.95)' },
+  alertBannerWarning: { backgroundColor: 'rgba(255,234,0,0.9)' },
+  alertText: { color: '#FFF', fontSize: 13, fontWeight: '700' as const, flex: 1 },
+
+  // Timer row
+  timerRow: {
+    flexDirection: 'row' as const, alignItems: 'center' as const,
+    justifyContent: 'center' as const, gap: 8,
+    paddingVertical: 8, backgroundColor: colors.surface1,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  timer: { color: colors.textPrimary, fontSize: 22, fontWeight: '700' as const, fontVariant: ['tabular-nums'] },
+  droneNameActive: { color: colors.textSecondary, fontSize: 12 },
+
+  // Gauges
+  gaugesRow: { flexDirection: 'row' as const, gap: 8, padding: 8, flex: 1 },
+  gaugeCompact: {
+    flex: 1, backgroundColor: colors.surface1, borderRadius: borderRadius.lg,
+    padding: 10, alignItems: 'center' as const, justifyContent: 'center' as const,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  gaugeManual: { borderColor: colors.primary, borderWidth: 1.5 },
+  gaugeEditing: { borderColor: colors.primary, borderWidth: 2 },
+  gaugeWarn: { borderColor: colors.danger, borderWidth: 2 },
+  gaugeLabelRow: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 4 },
+  gaugeLabel: { color: colors.textSecondary, fontSize: 9, fontWeight: '600' as const, letterSpacing: 1, textTransform: 'uppercase' as const },
+  gaugeValue: { color: colors.textPrimary, fontSize: 28, fontWeight: '700' as const, fontVariant: ['tabular-nums'], marginTop: 2 },
+  gaugeUnit: { color: colors.textSecondary, fontSize: 10, marginTop: 1 },
+  gaugeInput: {
+    color: colors.textPrimary, fontSize: 24, fontWeight: '700' as const,
+    textAlign: 'center' as const, borderBottomWidth: 2, borderBottomColor: colors.primary,
+    paddingVertical: 2, minWidth: 60,
+  },
+
+  // End button
+  endBtn: {
+    backgroundColor: colors.danger, paddingVertical: 14,
+    alignItems: 'center' as const, margin: 8, borderRadius: borderRadius.lg,
+  },
+  endBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' as const, letterSpacing: 1 },
+});
