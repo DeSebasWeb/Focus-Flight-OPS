@@ -4,3 +4,4 @@ export { Distance } from './Distance';
 export { Weight } from './Weight';
 export { RegistrationNumber } from './RegistrationNumber';
 export { FlightDuration } from './FlightDuration';
+export { TelemetryReading, type TelemetryReadingProps } from './TelemetryReading';

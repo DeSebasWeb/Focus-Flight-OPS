@@ -10,3 +10,5 @@ export type { ITelemetryCollector } from './ITelemetryCollector';
 export type { ILocationProvider } from './ILocationProvider';
 export type { IFileStorage } from './IFileStorage';
 export type { INotificationService } from './INotificationService';
+export type { ITelemetryProvider, TelemetryProviderConfig } from './ITelemetryProvider';
+export type { IConnectionMonitor, ConnectionEvent } from './IConnectionMonitor';
