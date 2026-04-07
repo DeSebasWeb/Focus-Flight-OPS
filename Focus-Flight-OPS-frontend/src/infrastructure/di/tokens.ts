@@ -19,6 +19,11 @@ export const DI_TOKENS = {
   TelemetryCollector: Symbol.for('ITelemetryCollector'),
   LocationProvider: Symbol.for('ILocationProvider'),
 
+  // Telemetry Providers (outbound ports)
+  DjiTelemetryProvider: Symbol.for('IDjiTelemetryProvider'),
+  GpsTelemetryProvider: Symbol.for('IGpsTelemetryProvider'),
+  ConnectionMonitor: Symbol.for('IConnectionMonitor'),
+
   // Infrastructure
   FileStorage: Symbol.for('IFileStorage'),
   NotificationService: Symbol.for('INotificationService'),
@@ -32,4 +37,5 @@ export const DI_TOKENS = {
   StartFlight: Symbol.for('StartFlightUseCase'),
   EndFlight: Symbol.for('EndFlightUseCase'),
   TriggerEmergency: Symbol.for('TriggerEmergencyUseCase'),
+  ManageTelemetryStream: Symbol.for('ManageTelemetryStreamUseCase'),
 } as const;

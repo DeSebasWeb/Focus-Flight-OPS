@@ -7,7 +7,13 @@
  * Pattern: Manual DI (no decorator-based container) for React Native compatibility.
  */
 
+import { Platform } from 'react-native';
 import { DI_TOKENS } from './tokens';
+import { ExpoLocationTelemetryAdapter } from '../adapters/outbound/telemetry/ExpoLocationTelemetryAdapter';
+import { DjiTelemetryAdapter } from '../adapters/outbound/telemetry/DjiTelemetryAdapter';
+import { DjiConnectionAdapter } from '../adapters/outbound/telemetry/DjiConnectionAdapter';
+import { NullConnectionAdapter } from '../adapters/outbound/telemetry/NullConnectionAdapter';
+import { ManageTelemetryStreamUseCase } from '../../application/use-cases/telemetry/ManageTelemetryStreamUseCase';
 
 type Constructor<T = unknown> = new (...args: unknown[]) => T;
 type Factory<T = unknown> = () => T;
@@ -62,17 +68,39 @@ export const container = new DIContainer();
  * ```
  */
 export function initializeContainer(): void {
-  // Repository registrations would go here:
+  // --- Telemetry Providers (Outbound Ports) ---
+
+  // GPS Provider: always available on all platforms
+  container.registerFactory(DI_TOKENS.GpsTelemetryProvider, () =>
+    new ExpoLocationTelemetryAdapter(),
+  );
+
+  // DJI Provider: only functional on Android with native module compiled
+  container.registerFactory(DI_TOKENS.DjiTelemetryProvider, () =>
+    new DjiTelemetryAdapter(),
+  );
+
+  // Connection Monitor: DJI on Android, Null on other platforms (LSP: both satisfy IConnectionMonitor)
+  container.registerFactory(DI_TOKENS.ConnectionMonitor, () =>
+    Platform.OS === 'android' ? new DjiConnectionAdapter() : new NullConnectionAdapter(),
+  );
+
+  // --- Use Cases ---
+
+  container.registerFactory(DI_TOKENS.ManageTelemetryStream, () =>
+    new ManageTelemetryStreamUseCase(
+      container.resolve(DI_TOKENS.DjiTelemetryProvider),
+      container.resolve(DI_TOKENS.GpsTelemetryProvider),
+      container.resolve(DI_TOKENS.ConnectionMonitor),
+      container.resolve(DI_TOKENS.TelemetryCollector),
+    ),
+  );
+
+  // --- Future registrations ---
   //
   // container.registerFactory(DI_TOKENS.DroneRepository, () =>
   //   new SQLiteDroneRepository(database)
   // );
-  //
-  // container.registerFactory(DI_TOKENS.WeatherProvider, () =>
-  //   new OpenMeteoWeatherAdapter()
-  // );
-  //
-  // Use case registrations:
   //
   // container.registerFactory(DI_TOKENS.ValidatePreFlightLegal, () =>
   //   new ValidatePreFlightLegalUseCase(
