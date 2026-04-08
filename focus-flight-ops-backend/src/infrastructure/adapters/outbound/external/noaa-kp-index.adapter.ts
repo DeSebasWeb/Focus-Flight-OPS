@@ -71,58 +71,59 @@ export class NoaaKpIndexAdapter {
         { timeout: 10000 },
       );
 
-      const rows: string[][] = response.data;
-      // Skip header row
-      const dataRows = rows.slice(1);
+      const rawData = response.data;
+
+      // NOAA API returns array of objects: { time_tag, kp, observed, noaa_scale }
+      const entries: Array<{ time_tag: string; kp: number; observed: string; noaa_scale: string | null }> = rawData;
 
       const now = Date.now();
-      let currentRow: string[] | null = null;
+      let currentEntry: typeof entries[0] | null = null;
       const forecast: KpForecastPoint[] = [];
 
-      for (const row of dataRows) {
-        const [time, kpStr, status, scale] = row;
-        const rowTime = new Date(time + ' UTC').getTime();
-        const kp = parseFloat(kpStr);
+      for (const entry of entries) {
+        const rowTime = new Date(entry.time_tag).getTime();
+        const kp = entry.kp;
+        const status = entry.observed;
 
         // Find the most recent observed/estimated entry
         if (rowTime <= now && (status === 'observed' || status === 'estimated')) {
-          currentRow = row;
+          currentEntry = entry;
         }
 
         // Collect forecast (next 24 hours)
         if (rowTime > now && rowTime <= now + 24 * 60 * 60 * 1000) {
           forecast.push({
-            timestamp: time,
+            timestamp: entry.time_tag,
             kp,
             status,
-            noaaScale: scale || null,
+            noaaScale: entry.noaa_scale || null,
           });
         }
       }
 
-      // If no current found, use the latest row before now
-      if (!currentRow && dataRows.length > 0) {
-        for (let i = dataRows.length - 1; i >= 0; i--) {
-          const rowTime = new Date(dataRows[i][0] + ' UTC').getTime();
+      // If no current found, use the latest entry before now
+      if (!currentEntry && entries.length > 0) {
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const rowTime = new Date(entries[i].time_tag).getTime();
           if (rowTime <= now) {
-            currentRow = dataRows[i];
+            currentEntry = entries[i];
             break;
           }
         }
       }
 
-      if (!currentRow) {
-        currentRow = dataRows[dataRows.length - 1];
+      if (!currentEntry) {
+        currentEntry = entries[entries.length - 1];
       }
 
-      const kp = parseFloat(currentRow[1]);
+      const kp = currentEntry.kp;
       const level = getKpLevel(kp);
 
       const result: KpIndexData = {
         current: Math.round(kp * 100) / 100,
-        timestamp: currentRow[0],
-        status: currentRow[2] as any,
-        noaaScale: currentRow[3] || null,
+        timestamp: currentEntry.time_tag,
+        status: currentEntry.observed as any,
+        noaaScale: currentEntry.noaa_scale || null,
         level,
         flyable: kp < 7,
         message: getKpMessage(kp),

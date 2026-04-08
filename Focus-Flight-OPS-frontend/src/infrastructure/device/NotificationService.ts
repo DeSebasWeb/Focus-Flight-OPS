@@ -31,12 +31,12 @@ export async function setupNotifications(): Promise<string | null> {
       });
     }
 
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+    const existingPerms = await Notifications.getPermissionsAsync();
+    let finalStatus = (existingPerms as any).status as string;
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+    if (finalStatus !== 'granted') {
+      const newPerms = await Notifications.requestPermissionsAsync();
+      finalStatus = (newPerms as any).status as string;
     }
 
     if (finalStatus !== 'granted') return null;
