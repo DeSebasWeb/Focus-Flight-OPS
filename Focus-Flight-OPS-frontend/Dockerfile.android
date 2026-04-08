@@ -1,0 +1,55 @@
+# Android build environment for Focus Flight Ops dev APK
+# Usage:
+#   docker build -f Dockerfile.android -t ffo-android-builder .
+#   docker run --rm -v "%cd%/apk-output:/output" ffo-android-builder
+
+FROM node:20-bookworm
+
+# Install Android SDK dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk \
+    wget \
+    unzip \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up Android SDK
+ENV ANDROID_HOME=/opt/android-sdk
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tools:${PATH}"
+
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/cmdtools.zip && \
+    unzip -q /tmp/cmdtools.zip -d ${ANDROID_HOME}/cmdline-tools && \
+    mv ${ANDROID_HOME}/cmdline-tools/cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest && \
+    rm /tmp/cmdtools.zip
+
+# Accept licenses and install SDK components
+RUN yes | sdkmanager --licenses > /dev/null 2>&1 && \
+    sdkmanager \
+    "platform-tools" \
+    "platforms;android-36" \
+    "build-tools;36.0.0" \
+    "ndk;27.1.12297006"
+
+WORKDIR /app
+
+# Copy package files first for layer caching
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the project
+COPY . .
+
+# Run prebuild if android/ doesn't have the right config
+RUN npx expo prebuild --platform android --clean --no-install
+
+# Build the debug APK
+WORKDIR /app/android
+RUN chmod +x gradlew && \
+    ./gradlew :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx4g"
+
+# Copy APK to output
+RUN mkdir -p /output
+CMD cp /app/android/app/build/outputs/apk/debug/app-debug.apk /output/focus-flight-ops-dev.apk && \
+    echo "APK copied to /output/focus-flight-ops-dev.apk"
