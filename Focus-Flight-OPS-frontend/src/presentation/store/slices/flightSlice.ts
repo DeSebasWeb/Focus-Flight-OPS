@@ -27,6 +27,7 @@ export interface TelemetryData {
   longitude: number;
   altitudeM: number;
   speedMs: number;
+  headingDeg?: number;
   batteryPercent: number;
   signalStrength: number;
   distanceFromPilotM: number;

@@ -4,15 +4,18 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
 import { useTheme } from '../../theme/ThemeContext';
 import { useStyles, StyleTheme } from '../../hooks/useStyles';
 import { useHaptic } from '../../hooks/useHaptic';
-import { useFlightStore } from '../../store/slices/flightSlice';
+import { useTelemetryStream } from '../../hooks/useTelemetryStream';
+import { TelemetrySource } from '../../../core/enums';
+import { useFlightStore, TelemetryData } from '../../store/slices/flightSlice';
 import { useFleetStore } from '../../store/slices/fleetSlice';
 import { buildLiveFlightMapHtml } from '../../utils/liveFlightMapHtml';
 import { geofenceApi } from '../../../services/api/geofenceApi';
 import { syncManager } from '../../../infrastructure/sync/SyncManager';
+import { container, DI_TOKENS } from '../../../infrastructure/di/Container';
+import type { ITelemetryProvider } from '../../../core/ports/outbound';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_HEIGHT = SCREEN_HEIGHT * 0.38;
@@ -34,8 +37,14 @@ export function ActiveFlightScreen({ navigation }: any) {
 
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const telemetryRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const webViewRef = useRef<WebView>(null);
+  const lastBackendSendRef = useRef<number>(0);
+
+  // Telemetry stream via DI — auto-switches DJI (100ms) / GPS (3s)
+  const { reading, source, productName } = useTelemetryStream(
+    activeFlight?.id ?? null,
+    activeFlight ? { latitude: activeFlight.takeoffLat, longitude: activeFlight.takeoffLng } : null,
+  );
 
   // Map & zones
   const [mapHtml, setMapHtml] = useState<string | null>(null);
@@ -82,7 +91,7 @@ export function ActiveFlightScreen({ navigation }: any) {
     setMapHtml(html);
   };
 
-  // Timer + Telemetry intervals
+  // Timer interval
   useEffect(() => {
     if (activeFlight) {
       intervalRef.current = setInterval(() => {
@@ -91,53 +100,54 @@ export function ActiveFlightScreen({ navigation }: any) {
         );
         setElapsedSeconds(elapsed);
       }, 1000);
-
-      telemetryRef.current = setInterval(async () => {
-        try {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          const telemetryData = {
-            timestamp: Date.now(),
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            altitudeM: loc.coords.altitude ?? 0,
-            speedMs: loc.coords.speed ?? 0,
-            headingDeg: loc.coords.heading ?? 0,
-            batteryPercent: 0,
-            signalStrength: 0,
-            distanceFromPilotM: 0,
-            satelliteCount: 0,
-          };
-
-          updateTelemetry(telemetryData);
-
-          // Update map position
-          webViewRef.current?.postMessage(JSON.stringify({
-            type: 'updatePosition',
-            lat: telemetryData.latitude,
-            lng: telemetryData.longitude,
-            heading: telemetryData.headingDeg,
-          }));
-
-          // Send to backend
-          if (activeFlight?.id) {
-            sendTelemetry(activeFlight.id, {
-              timestamp: new Date(telemetryData.timestamp).toISOString(),
-              latitude: telemetryData.latitude,
-              longitude: telemetryData.longitude,
-              altitudeAglM: telemetryData.altitudeM,
-              speedMs: telemetryData.speedMs,
-              headingDeg: telemetryData.headingDeg,
-            }).catch(() => {});
-          }
-        } catch {}
-      }, 3000);
     }
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (telemetryRef.current) clearInterval(telemetryRef.current);
     };
   }, [activeFlight?.id]);
+
+  // Sync telemetry reading → store + map + backend (throttled)
+  useEffect(() => {
+    if (!reading || !activeFlight) return;
+
+    const telemetryData: TelemetryData = {
+      timestamp: reading.timestamp,
+      latitude: reading.position.latitude,
+      longitude: reading.position.longitude,
+      altitudeM: reading.altitudeAglM,
+      speedMs: reading.speedMs,
+      headingDeg: reading.headingDeg,
+      batteryPercent: reading.batteryPercent,
+      signalStrength: reading.signalStrength,
+      distanceFromPilotM: reading.distanceFromPilotM,
+      satelliteCount: reading.satelliteCount,
+    };
+
+    updateTelemetry(telemetryData);
+
+    // Update map position
+    webViewRef.current?.postMessage(JSON.stringify({
+      type: 'updatePosition',
+      lat: reading.position.latitude,
+      lng: reading.position.longitude,
+      heading: reading.headingDeg,
+    }));
+
+    // Backend throttled to every 3s (DJI emits at 100ms, GPS at 3s)
+    const now = Date.now();
+    if (now - lastBackendSendRef.current >= 3000) {
+      lastBackendSendRef.current = now;
+      sendTelemetry(activeFlight.id, {
+        timestamp: new Date(reading.timestamp).toISOString(),
+        latitude: reading.position.latitude,
+        longitude: reading.position.longitude,
+        altitudeAglM: reading.altitudeAglM,
+        speedMs: reading.speedMs,
+        headingDeg: reading.headingDeg,
+      }).catch(() => {});
+    }
+  }, [reading]);
 
   // Handle WebView messages (proximity alerts)
   const onWebViewMessage = useCallback((event: any) => {
@@ -180,11 +190,13 @@ export function ActiveFlightScreen({ navigation }: any) {
     }
     try {
       let lat = 4.6782, lng = -74.0582;
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        lat = loc.coords.latitude;
-        lng = loc.coords.longitude;
+      try {
+        const gpsProvider = container.resolve<ITelemetryProvider>(DI_TOKENS.GpsTelemetryProvider);
+        const initialReading = await gpsProvider.getCurrentReading();
+        lat = initialReading.position.latitude;
+        lng = initialReading.position.longitude;
+      } catch {
+        // Fallback to default Bogota coordinates if GPS unavailable
       }
       haptic.heavy();
       await startFlight({
@@ -215,9 +227,10 @@ export function ActiveFlightScreen({ navigation }: any) {
               try {
                 let lat = 4.6782, lng = -74.0582;
                 try {
-                  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-                  lat = loc.coords.latitude;
-                  lng = loc.coords.longitude;
+                  const gpsProvider = container.resolve<ITelemetryProvider>(DI_TOKENS.GpsTelemetryProvider);
+                  const landingReading = await gpsProvider.getCurrentReading();
+                  lat = landingReading.position.latitude;
+                  lng = landingReading.position.longitude;
                 } catch {}
                 await endFlight(activeFlight.id, { landingLat: lat, landingLng: lng });
                 setElapsedSeconds(0);
@@ -294,6 +307,14 @@ export function ActiveFlightScreen({ navigation }: any) {
       {/* Top bar */}
       <View style={s.topBar}>
         <View style={s.topItem}>
+          <Text style={s.topLabel}>SRC</Text>
+          <Text style={[s.topValue, {
+            color: source === TelemetrySource.DJI_DRONE ? colors.success : colors.warning,
+          }]}>
+            {source === TelemetrySource.DJI_DRONE ? 'DJI' : 'GPS'}
+          </Text>
+        </View>
+        <View style={s.topItem}>
           <Text style={s.topLabel}>SAT</Text>
           <Text style={s.topValue}>{tel?.satelliteCount ?? '--'}</Text>
         </View>
@@ -350,7 +371,9 @@ export function ActiveFlightScreen({ navigation }: any) {
       <View style={s.timerRow}>
         <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
         <Text style={s.timer}>{formatTime(elapsedSeconds)}</Text>
-        <Text style={s.droneNameActive}>{selectedDrone?.manufacturer} {selectedDrone?.modelName}</Text>
+        <Text style={s.droneNameActive}>
+          {productName ?? `${selectedDrone?.manufacturer} ${selectedDrone?.modelName}`}
+        </Text>
       </View>
 
       {/* Compact gauges - 3 in a row, ALT and DIST editable */}
