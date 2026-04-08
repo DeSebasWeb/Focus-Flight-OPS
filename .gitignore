@@ -41,3 +41,14 @@ Focus-Flight-OPS-backend/prisma/*.db
 *.apk
 *.ipa
 *.aab
+
+# Generated native directories (expo prebuild)
+Focus-Flight-OPS-frontend/android/
+Focus-Flight-OPS-frontend/ios/
+
+# APK build output
+Focus-Flight-OPS-frontend/apk-output/
+
+# Docker build logs
+build-full.log
+build.log

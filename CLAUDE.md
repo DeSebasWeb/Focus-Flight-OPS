@@ -148,6 +148,21 @@ Emergency:  GET /contacts, GET /contacts/nearest, GET /flyaway-protocol, POST /e
 - API gratuita sin API key
 - Temperatura, viento, ráfagas, humedad, visibilidad, tormentas, presión, índice K
 
+### DJI Mobile SDK v5 (Telemetría Drone en Tiempo Real)
+- **Expo Native Module:** `modules/expo-dji-telemetry/` (Kotlin + TypeScript)
+- **App Key:** `dfce378a784d5af2748ee8cf` | Package: `com.focusflightops.app`
+- **Gradle dep:** `com.dji:dji-sdk-v5-aircraft:5.17.0`
+- **Arquitectura Hexagonal Estricta:**
+  - **Domain:** `ITelemetryProvider` (outbound port), `IConnectionMonitor` (outbound port), `ITelemetryManager` (inbound port), `TelemetryReading` (value object), `TelemetrySource`/`ConnectionStatus` (enums)
+  - **Application:** `ManageTelemetryStreamUseCase` implements `ITelemetryManager` — orquesta auto-switching DJI/GPS
+  - **Infrastructure:** `DjiTelemetryAdapter` implements `ITelemetryProvider`, `ExpoLocationTelemetryAdapter` implements `ITelemetryProvider`, `DjiConnectionAdapter`/`NullConnectionAdapter` implements `IConnectionMonitor`
+  - **Presentation:** `useTelemetryStream` hook consume `ITelemetryManager` via DI
+- **Prioridad fuente:** DJI conectado USB → 100ms telemetría real | Sin drone → GPS teléfono 3s (fallback automático)
+- **Funciona SIN internet** (conexión directa Drone → Control → USB → Teléfono). Primera activación SDK requiere internet.
+- **Config Plugin:** `expo-plugin.js` inyecta AndroidManifest (USB host, API key), Maven repo DJI, ProGuard rules
+- **Requiere EAS Dev Build** — ya NO funciona en Expo Go. Usar `npm run build:dev` para generar APK
+- **DI Tokens:** `DjiTelemetryProvider`, `GpsTelemetryProvider`, `ConnectionMonitor`, `ManageTelemetryStream`
+
 ## Frontend - Pantallas Actuales (20)
 
 **Dashboard:** DashboardScreen (clima, índice Kp con pronóstico 24h, alertas vencimiento, flota, acciones rápidas)
@@ -157,7 +172,7 @@ Emergency:  GET /contacts, GET /contacts/nearest, GET /flyaway-protocol, POST /e
 **Pre-Flight:** PreFlightScreen (mapa UAEAC + clima + Kp + legal), AirspaceMapScreen
 **Mission:** CreateMissionScreen
 **Checklist:** ChecklistScreen (3 fases + captura de fotos + firma digital)
-**Flight:** ActiveFlightScreen (mapa en vivo + HUD + gauges editables + alertas proximidad), FlightLogListScreen, FlightLogDetailScreen (+ exportar PDF RAC 100)
+**Flight:** ActiveFlightScreen (mapa en vivo + HUD + gauges editables + alertas proximidad + telemetría DJI/GPS auto-switch), FlightLogListScreen, FlightLogDetailScreen (+ exportar PDF RAC 100)
 **Emergency:** EmergencyDashboardScreen, FlyawayProtocolScreen
 
 **Componentes comunes:** Card, StatusBadge, ProgressBar, ThemedInput, ThemedButton (con haptic), Skeleton/SkeletonCard/SkeletonList, AnimatedListItem, AnimatedSplash, BottomSheetModal (Modal nativo), OfflineBanner, SignaturePad
@@ -360,7 +375,14 @@ npx prisma studio                # GUI de la DB
 # Frontend
 cd Focus-Flight-OPS-frontend
 npx expo start --clear           # Dev server (limpiar cache)
+npx expo start --dev-client      # Dev server para dev builds (NO Expo Go)
 npx tsc --noEmit                 # Type check
+
+# EAS Build (requiere para DJI SDK)
+cd Focus-Flight-OPS-frontend
+npx expo prebuild --platform android --clean  # Generar android/
+npm run build:dev                              # APK dev build local
+npm run build:preview                          # APK preview (EAS cloud)
 
 # Docker
 docker compose build backend     # Rebuild imagen
